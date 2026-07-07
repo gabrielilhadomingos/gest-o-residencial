@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,67 +15,159 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddSingleton<PeopleStore>();
+builder.Services.AddDbContext<AvaliaDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Data Source=Data/avalia.db";
+
+    options.UseSqlite(connectionString);
+});
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AvaliaDbContext>();
+    Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "Data"));
+    db.Database.EnsureCreated();
+}
 
 app.UseCors(FrontendCorsPolicy);
 app.UseHttpsRedirection();
 
 var people = app.MapGroup("/api/people");
 
-people.MapGet("/", (PeopleStore store) =>
+people.MapGet("/", async (AvaliaDbContext db) =>
 {
-    return Results.Ok(store.GetAll());
+    var result = await db.Pessoas
+        .AsNoTracking()
+        .OrderBy(pessoa => pessoa.Nome)
+        .Select(pessoa => PessoaResponse.FromEntity(pessoa))
+        .ToListAsync();
+
+    return Results.Ok(result);
 });
 
-people.MapGet("/{id:guid}", (Guid id, PeopleStore store) =>
+people.MapGet("/{id:guid}", async (Guid id, AvaliaDbContext db) =>
 {
-    var person = store.GetById(id);
-    return person is null ? Results.NotFound() : Results.Ok(person);
+    var pessoa = await db.Pessoas.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);
+    return pessoa is null ? Results.NotFound() : Results.Ok(PessoaResponse.FromEntity(pessoa));
 });
 
-people.MapPost("/", (PersonRequest request, PeopleStore store) =>
+people.MapPost("/", async (PessoaRequest request, AvaliaDbContext db) =>
 {
-    var validationError = Validate(request);
+    var validationError = ValidatePessoa(request);
     if (validationError is not null)
     {
         return Results.BadRequest(new { message = validationError });
     }
 
-    var person = store.Create(request);
-    return Results.Created($"/api/people/{person.Id}", person);
+    var pessoa = new Pessoa
+    {
+        Id = Guid.NewGuid(),
+        Nome = request.Name.Trim(),
+        Idade = request.Age
+    };
+
+    db.Pessoas.Add(pessoa);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/people/{pessoa.Id}", PessoaResponse.FromEntity(pessoa));
 });
 
-people.MapPut("/{id:guid}", (Guid id, PersonRequest request, PeopleStore store) =>
+people.MapPut("/{id:guid}", async (Guid id, PessoaRequest request, AvaliaDbContext db) =>
 {
-    var validationError = Validate(request);
+    var validationError = ValidatePessoa(request);
     if (validationError is not null)
     {
         return Results.BadRequest(new { message = validationError });
     }
 
-    var person = store.Update(id, request);
-    return person is null ? Results.NotFound() : Results.Ok(person);
+    var pessoa = await db.Pessoas.FirstOrDefaultAsync(item => item.Id == id);
+    if (pessoa is null)
+    {
+        return Results.NotFound();
+    }
+
+    pessoa.Nome = request.Name.Trim();
+    pessoa.Idade = request.Age;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(PessoaResponse.FromEntity(pessoa));
 });
 
-people.MapDelete("/{id:guid}", (Guid id, PeopleStore store) =>
+people.MapDelete("/{id:guid}", async (Guid id, AvaliaDbContext db) =>
 {
-    return store.Delete(id) ? Results.NoContent() : Results.NotFound();
+    var pessoa = await db.Pessoas.FirstOrDefaultAsync(item => item.Id == id);
+    if (pessoa is null)
+    {
+        return Results.NotFound();
+    }
+
+    db.Pessoas.Remove(pessoa);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+var transactions = app.MapGroup("/api/transactions");
+
+transactions.MapGet("/", async (AvaliaDbContext db) =>
+{
+    var result = await db.Transacoes
+        .AsNoTracking()
+        .Include(transacao => transacao.Pessoa)
+        .OrderBy(transacao => transacao.Descricao)
+        .Select(transacao => TransacaoResponse.FromEntity(transacao))
+        .ToListAsync();
+
+    return Results.Ok(result);
+});
+
+transactions.MapPost("/", async (TransacaoRequest request, AvaliaDbContext db) =>
+{
+    var validationError = ValidateTransacao(request);
+    if (validationError is not null)
+    {
+        return Results.BadRequest(new { message = validationError });
+    }
+
+    var pessoa = await db.Pessoas.FirstOrDefaultAsync(item => item.Id == request.PessoaId);
+    if (pessoa is null)
+    {
+        return Results.BadRequest(new { message = "A pessoa informada nao existe." });
+    }
+
+    var tipo = NormalizeTipo(request.Tipo);
+    if (pessoa.Idade < 18 && tipo == TransactionTypes.Receita)
+    {
+        return Results.BadRequest(new { message = "Pessoas menores de 18 anos nao podem cadastrar receitas." });
+    }
+
+    var transacao = new Transacao
+    {
+        Id = Guid.NewGuid(),
+        Descricao = request.Descricao.Trim(),
+        Valor = request.Valor,
+        Tipo = tipo,
+        PessoaId = request.PessoaId,
+        Pessoa = pessoa
+    };
+
+    db.Transacoes.Add(transacao);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/transactions/{transacao.Id}", TransacaoResponse.FromEntity(transacao));
 });
 
 app.Run();
 
-static string? Validate(PersonRequest request)
+static string? ValidatePessoa(PessoaRequest request)
 {
     if (string.IsNullOrWhiteSpace(request.Name))
     {
         return "O nome da pessoa e obrigatorio.";
-    }
-
-    if (!string.IsNullOrWhiteSpace(request.Email) && !request.Email.Contains('@', StringComparison.Ordinal))
-    {
-        return "Informe um e-mail valido.";
     }
 
     if (request.Age < 0 || request.Age > 130)
@@ -86,81 +178,136 @@ static string? Validate(PersonRequest request)
     return null;
 }
 
-public sealed record Person(
+static string? ValidateTransacao(TransacaoRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Descricao))
+    {
+        return "A descricao da transacao e obrigatoria.";
+    }
+
+    if (request.Valor <= 0)
+    {
+        return "O valor da transacao deve ser maior que zero.";
+    }
+
+    if (request.PessoaId == Guid.Empty)
+    {
+        return "Informe uma pessoa valida.";
+    }
+
+    var tipo = NormalizeTipo(request.Tipo);
+    if (tipo is not (TransactionTypes.Despesa or TransactionTypes.Receita))
+    {
+        return "O tipo da transacao deve ser despesa ou receita.";
+    }
+
+    return null;
+}
+
+static string NormalizeTipo(string? tipo)
+{
+    return tipo?.Trim().ToLowerInvariant() ?? string.Empty;
+}
+
+public sealed class AvaliaDbContext(DbContextOptions<AvaliaDbContext> options) : DbContext(options)
+{
+    public DbSet<Pessoa> Pessoas => Set<Pessoa>();
+    public DbSet<Transacao> Transacoes => Set<Transacao>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Pessoa>(entity =>
+        {
+            entity.ToTable("Pessoas");
+            entity.HasKey(pessoa => pessoa.Id);
+            entity.Property(pessoa => pessoa.Nome).HasMaxLength(120).IsRequired();
+            entity.Property(pessoa => pessoa.Idade).IsRequired();
+
+            entity
+                .HasMany(pessoa => pessoa.Transacoes)
+                .WithOne(transacao => transacao.Pessoa)
+                .HasForeignKey(transacao => transacao.PessoaId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Transacao>(entity =>
+        {
+            entity.ToTable("Transacoes");
+            entity.HasKey(transacao => transacao.Id);
+            entity.Property(transacao => transacao.Descricao).HasMaxLength(180).IsRequired();
+            entity.Property(transacao => transacao.Valor).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(transacao => transacao.Tipo).HasMaxLength(20).IsRequired();
+            entity.Property(transacao => transacao.PessoaId).IsRequired();
+        });
+    }
+}
+
+public sealed class Pessoa
+{
+    public Guid Id { get; set; }
+    public string Nome { get; set; } = string.Empty;
+    public int Idade { get; set; }
+    public ICollection<Transacao> Transacoes { get; set; } = [];
+}
+
+public sealed class Transacao
+{
+    public Guid Id { get; set; }
+    public string Descricao { get; set; } = string.Empty;
+    public decimal Valor { get; set; }
+    public string Tipo { get; set; } = string.Empty;
+    public Guid PessoaId { get; set; }
+    public Pessoa? Pessoa { get; set; }
+}
+
+public sealed record PessoaRequest(string Name, int Age);
+
+public sealed record TransacaoRequest(string Descricao, decimal Valor, string Tipo, Guid PessoaId);
+
+public sealed record PessoaResponse(
     Guid Id,
     string Name,
     int Age,
-    string? Email,
-    string? Phone,
-    DateTime CreatedAt
+    bool CanRegisterExpense,
+    bool CanRegisterIncome
 )
 {
-    public bool CanRegisterExpense => true;
-    public bool CanRegisterIncome => Age >= 18;
+    public static PessoaResponse FromEntity(Pessoa pessoa)
+    {
+        return new PessoaResponse(
+            pessoa.Id,
+            pessoa.Nome,
+            pessoa.Idade,
+            CanRegisterExpense: true,
+            CanRegisterIncome: pessoa.Idade >= 18
+        );
+    }
 }
 
-public sealed record PersonRequest(
-    string Name,
-    int Age,
-    string? Email,
-    string? Phone
-);
-
-public sealed class PeopleStore
+public sealed record TransacaoResponse(
+    Guid Id,
+    string Descricao,
+    decimal Valor,
+    string Tipo,
+    Guid PessoaId,
+    string PessoaNome
+)
 {
-    private readonly ConcurrentDictionary<Guid, Person> _people = new();
-
-    public IEnumerable<Person> GetAll()
+    public static TransacaoResponse FromEntity(Transacao transacao)
     {
-        return _people.Values.OrderBy(person => person.Name);
-    }
-
-    public Person? GetById(Guid id)
-    {
-        return _people.GetValueOrDefault(id);
-    }
-
-    public Person Create(PersonRequest request)
-    {
-        var person = new Person(
-            Guid.NewGuid(),
-            request.Name.Trim(),
-            request.Age,
-            CleanOptional(request.Email),
-            CleanOptional(request.Phone),
-            DateTime.UtcNow
+        return new TransacaoResponse(
+            transacao.Id,
+            transacao.Descricao,
+            transacao.Valor,
+            transacao.Tipo,
+            transacao.PessoaId,
+            transacao.Pessoa?.Nome ?? string.Empty
         );
-
-        _people[person.Id] = person;
-        return person;
     }
+}
 
-    public Person? Update(Guid id, PersonRequest request)
-    {
-        if (!_people.TryGetValue(id, out var current))
-        {
-            return null;
-        }
-
-        var updated = current with
-        {
-            Name = request.Name.Trim(),
-            Age = request.Age,
-            Email = CleanOptional(request.Email),
-            Phone = CleanOptional(request.Phone)
-        };
-
-        _people[id] = updated;
-        return updated;
-    }
-
-    public bool Delete(Guid id)
-    {
-        return _people.TryRemove(id, out _);
-    }
-
-    private static string? CleanOptional(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
+public static class TransactionTypes
+{
+    public const string Despesa = "despesa";
+    public const string Receita = "receita";
 }

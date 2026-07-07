@@ -63,15 +63,15 @@
   padding-top: 24px;
 }
 
-.person-form,
-.people-panel {
+.entry-form,
+.data-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 
-.person-form {
+.entry-form {
   flex: 0 0 340px;
   display: grid;
   gap: 16px;
@@ -84,7 +84,7 @@
   gap: 12px;
 }
 
-.people-panel {
+.data-panel {
   flex: 1;
   min-width: 0;
   padding: 20px;
@@ -103,7 +103,8 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
@@ -114,7 +115,8 @@ input {
   font: inherit;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--accent);
   outline: 3px solid var(--focus);
 }
@@ -187,7 +189,7 @@ button:disabled {
 
 table {
   width: 100%;
-  min-width: 760px;
+  min-width: 560px;
   border-collapse: collapse;
 }
 
@@ -240,6 +242,11 @@ tbody tr:last-child td {
   background: #fee2e2;
 }
 
+.permission.neutral {
+  color: #1e40af;
+  background: #dbeafe;
+}
+
 .empty-state {
   height: 130px;
   color: var(--muted);
@@ -263,7 +270,7 @@ tbody tr:last-child td {
     text-align: left;
   }
 
-  .person-form {
+  .entry-form {
     flex-basis: auto;
   }
 }

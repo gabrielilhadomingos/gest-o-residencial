@@ -7,36 +7,61 @@ type Person = {
   id: string
   name: string
   age: number
-  email: string | null
-  phone: string | null
-  createdAt: string
   canRegisterExpense: boolean
   canRegisterIncome: boolean
 }
 
+type Transaction = {
+  id: string
+  descricao: string
+  valor: number
+  tipo: TransactionType
+  pessoaId: string
+  pessoaNome: string
+}
+
+type TransactionType = 'despesa' | 'receita'
+
 type PersonForm = {
   name: string
   age: string
-  email: string
-  phone: string
+}
+
+type TransactionForm = {
+  descricao: string
+  valor: string
+  tipo: TransactionType
+  pessoaId: string
 }
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5080'
-const emptyForm: PersonForm = { name: '', age: '', email: '', phone: '' }
+const emptyPersonForm: PersonForm = { name: '', age: '' }
+const emptyTransactionForm: TransactionForm = {
+  descricao: '',
+  valor: '',
+  tipo: 'despesa',
+  pessoaId: '',
+}
 
 function App() {
   const [people, setPeople] = useState<Person[]>([])
-  const [form, setForm] = useState<PersonForm>(emptyForm)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [personForm, setPersonForm] = useState<PersonForm>(emptyPersonForm)
+  const [transactionForm, setTransactionForm] = useState<TransactionForm>(emptyTransactionForm)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [message, setMessage] = useState('')
+  const [isLoadingPeople, setIsLoadingPeople] = useState(true)
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true)
+  const [isSavingPerson, setIsSavingPerson] = useState(false)
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false)
+  const [personMessage, setPersonMessage] = useState('')
+  const [transactionMessage, setTransactionMessage] = useState('')
 
   const totalPeople = useMemo(() => people.length, [people])
+  const totalTransactions = useMemo(() => transactions.length, [transactions])
 
   async function loadPeople() {
-    setIsLoading(true)
-    setMessage('')
+    setIsLoadingPeople(true)
+    setPersonMessage('')
 
     try {
       const response = await fetch(`${apiUrl}/api/people`)
@@ -46,47 +71,71 @@ function App() {
 
       setPeople(await response.json())
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+      setPersonMessage(error instanceof Error ? error.message : 'Erro inesperado.')
     } finally {
-      setIsLoading(false)
+      setIsLoadingPeople(false)
     }
   }
 
+  async function loadTransactions() {
+    setIsLoadingTransactions(true)
+    setTransactionMessage('')
+
+    try {
+      const response = await fetch(`${apiUrl}/api/transactions`)
+      if (!response.ok) {
+        throw new Error('Nao foi possivel carregar as transacoes.')
+      }
+
+      setTransactions(await response.json())
+    } catch (error) {
+      setTransactionMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+    } finally {
+      setIsLoadingTransactions(false)
+    }
+  }
+
+  async function loadAll() {
+    await Promise.all([loadPeople(), loadTransactions()])
+  }
+
   useEffect(() => {
-    void loadPeople()
+    void loadAll()
   }, [])
 
-  function updateField(field: keyof PersonForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }))
+  function updatePersonField(field: keyof PersonForm, value: string) {
+    setPersonForm((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateTransactionField(field: keyof TransactionForm, value: string) {
+    setTransactionForm((current) => ({ ...current, [field]: value }))
   }
 
   function startEditing(person: Person) {
     setEditingId(person.id)
-    setForm({
+    setPersonForm({
       name: person.name,
       age: String(person.age),
-      email: person.email ?? '',
-      phone: person.phone ?? '',
     })
-    setMessage('')
+    setPersonMessage('')
   }
 
   function cancelEditing() {
     setEditingId(null)
-    setForm(emptyForm)
-    setMessage('')
+    setPersonForm(emptyPersonForm)
+    setPersonMessage('')
   }
 
   async function savePerson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setIsSaving(true)
-    setMessage('')
+    setIsSavingPerson(true)
+    setPersonMessage('')
 
     const method = editingId ? 'PUT' : 'POST'
     const url = editingId ? `${apiUrl}/api/people/${editingId}` : `${apiUrl}/api/people`
     const payload = {
-      ...form,
-      age: Number(form.age),
+      ...personForm,
+      age: Number(personForm.age),
     }
 
     try {
@@ -101,19 +150,19 @@ function App() {
         throw new Error(error?.message ?? 'Nao foi possivel salvar a pessoa.')
       }
 
-      setForm(emptyForm)
+      setPersonForm(emptyPersonForm)
       setEditingId(null)
       await loadPeople()
-      setMessage(editingId ? 'Pessoa atualizada.' : 'Pessoa cadastrada.')
+      setPersonMessage(editingId ? 'Pessoa atualizada.' : 'Pessoa cadastrada.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+      setPersonMessage(error instanceof Error ? error.message : 'Erro inesperado.')
     } finally {
-      setIsSaving(false)
+      setIsSavingPerson(false)
     }
   }
 
   async function deletePerson(id: string) {
-    setMessage('')
+    setPersonMessage('')
 
     try {
       const response = await fetch(`${apiUrl}/api/people/${id}`, {
@@ -128,10 +177,42 @@ function App() {
         cancelEditing()
       }
 
-      await loadPeople()
-      setMessage('Pessoa removida.')
+      await loadAll()
+      setPersonMessage('Pessoa removida.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+      setPersonMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+    }
+  }
+
+  async function saveTransaction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSavingTransaction(true)
+    setTransactionMessage('')
+
+    const payload = {
+      ...transactionForm,
+      valor: Number(transactionForm.valor),
+    }
+
+    try {
+      const response = await fetch(`${apiUrl}/api/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null)
+        throw new Error(error?.message ?? 'Nao foi possivel cadastrar a transacao.')
+      }
+
+      setTransactionForm(emptyTransactionForm)
+      await loadTransactions()
+      setTransactionMessage('Transacao cadastrada.')
+    } catch (error) {
+      setTransactionMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+    } finally {
+      setIsSavingTransaction(false)
     }
   }
 
@@ -140,9 +221,9 @@ function App() {
       <header className="topbar">
         <div>
           <span className="eyebrow">Gestao residencial</span>
-          <h1>Cadastro de pessoas</h1>
+          <h1>Cadastros</h1>
         </div>
-        <button className="icon-button" type="button" onClick={loadPeople} aria-label="Atualizar lista">
+        <button className="icon-button" type="button" onClick={loadAll} aria-label="Atualizar dados">
           <RefreshCw size={18} />
         </button>
       </header>
@@ -152,11 +233,15 @@ function App() {
           <span className="summary-label">Pessoas cadastradas</span>
           <strong>{totalPeople}</strong>
         </div>
-        <p>Use este cadastro para vincular moradores, familiares ou participantes aos gastos depois.</p>
+        <div>
+          <span className="summary-label">Transacoes cadastradas</span>
+          <strong>{totalTransactions}</strong>
+        </div>
+        <p>Menores de 18 anos podem cadastrar despesas, mas nao podem cadastrar receitas.</p>
       </section>
 
       <section className="workspace">
-        <form className="person-form" onSubmit={savePerson}>
+        <form className="entry-form" onSubmit={savePerson}>
           <div className="form-heading">
             <h2>{editingId ? 'Editar pessoa' : 'Nova pessoa'}</h2>
             {editingId && (
@@ -171,8 +256,8 @@ function App() {
             Nome
             <input
               required
-              value={form.name}
-              onChange={(event) => updateField('name', event.target.value)}
+              value={personForm.name}
+              onChange={(event) => updatePersonField('name', event.target.value)}
               placeholder="Ex.: Ana Silva"
             />
           </label>
@@ -184,44 +269,25 @@ function App() {
               min={0}
               max={130}
               type="number"
-              value={form.age}
-              onChange={(event) => updateField('age', event.target.value)}
+              value={personForm.age}
+              onChange={(event) => updatePersonField('age', event.target.value)}
               placeholder="Ex.: 32"
             />
           </label>
 
-          <label>
-            E-mail
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => updateField('email', event.target.value)}
-              placeholder="ana@email.com"
-            />
-          </label>
-
-          <label>
-            Telefone
-            <input
-              value={form.phone}
-              onChange={(event) => updateField('phone', event.target.value)}
-              placeholder="(11) 99999-0000"
-            />
-          </label>
-
-          <button className="primary-button" type="submit" disabled={isSaving}>
+          <button className="primary-button" type="submit" disabled={isSavingPerson}>
             {editingId ? <Check size={18} /> : <Plus size={18} />}
-            {isSaving ? 'Salvando...' : editingId ? 'Salvar alteracoes' : 'Cadastrar pessoa'}
+            {isSavingPerson ? 'Salvando...' : editingId ? 'Salvar alteracoes' : 'Cadastrar pessoa'}
           </button>
+
+          {personMessage && <p className="status-message">{personMessage}</p>}
         </form>
 
-        <div className="people-panel">
+        <div className="data-panel">
           <div className="panel-heading">
             <h2>Pessoas</h2>
-            {isLoading && <span>Carregando...</span>}
+            {isLoadingPeople && <span>Carregando...</span>}
           </div>
-
-          {message && <p className="status-message">{message}</p>}
 
           <div className="table-wrap">
             <table>
@@ -229,16 +295,14 @@ function App() {
                 <tr>
                   <th>Nome</th>
                   <th>Idade</th>
-                  <th>E-mail</th>
-                  <th>Telefone</th>
                   <th>Permissoes</th>
                   <th aria-label="Acoes"></th>
                 </tr>
               </thead>
               <tbody>
-                {!isLoading && people.length === 0 && (
+                {!isLoadingPeople && people.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="empty-state">
+                    <td colSpan={4} className="empty-state">
                       Nenhuma pessoa cadastrada.
                     </td>
                   </tr>
@@ -248,8 +312,6 @@ function App() {
                   <tr key={person.id}>
                     <td>{person.name}</td>
                     <td>{person.age}</td>
-                    <td>{person.email ?? '-'}</td>
-                    <td>{person.phone ?? '-'}</td>
                     <td>
                       <div className="permission-list">
                         <span className="permission allowed">Despesa</span>
@@ -275,8 +337,123 @@ function App() {
           </div>
         </div>
       </section>
+
+      <section className="workspace">
+        <form className="entry-form" onSubmit={saveTransaction}>
+          <div className="form-heading">
+            <h2>Nova transacao</h2>
+          </div>
+
+          <label>
+            Descricao
+            <input
+              required
+              value={transactionForm.descricao}
+              onChange={(event) => updateTransactionField('descricao', event.target.value)}
+              placeholder="Ex.: Mercado"
+            />
+          </label>
+
+          <label>
+            Valor
+            <input
+              required
+              min={0.01}
+              step={0.01}
+              type="number"
+              value={transactionForm.valor}
+              onChange={(event) => updateTransactionField('valor', event.target.value)}
+              placeholder="Ex.: 120.50"
+            />
+          </label>
+
+          <label>
+            Tipo
+            <select
+              required
+              value={transactionForm.tipo}
+              onChange={(event) => updateTransactionField('tipo', event.target.value)}
+            >
+              <option value="despesa">Despesa</option>
+              <option value="receita">Receita</option>
+            </select>
+          </label>
+
+          <label>
+            Pessoa
+            <select
+              required
+              value={transactionForm.pessoaId}
+              onChange={(event) => updateTransactionField('pessoaId', event.target.value)}
+            >
+              <option value="">Selecione uma pessoa</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.name} - {person.age} anos
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button className="primary-button" type="submit" disabled={isSavingTransaction || people.length === 0}>
+            <Plus size={18} />
+            {isSavingTransaction ? 'Salvando...' : 'Cadastrar transacao'}
+          </button>
+
+          {transactionMessage && <p className="status-message">{transactionMessage}</p>}
+        </form>
+
+        <div className="data-panel">
+          <div className="panel-heading">
+            <h2>Transacoes</h2>
+            {isLoadingTransactions && <span>Carregando...</span>}
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Descricao</th>
+                  <th>Valor</th>
+                  <th>Tipo</th>
+                  <th>Pessoa</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!isLoadingTransactions && transactions.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="empty-state">
+                      Nenhuma transacao cadastrada.
+                    </td>
+                  </tr>
+                )}
+
+                {transactions.map((transaction) => (
+                  <tr key={transaction.id}>
+                    <td>{transaction.descricao}</td>
+                    <td>{formatCurrency(transaction.valor)}</td>
+                    <td>
+                      <span className={transaction.tipo === 'receita' ? 'permission allowed' : 'permission neutral'}>
+                        {transaction.tipo}
+                      </span>
+                    </td>
+                    <td>{transaction.pessoaNome}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
   )
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value)
 }
 
 export default App
