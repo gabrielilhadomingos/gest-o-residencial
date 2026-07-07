@@ -1,0 +1,6 @@
+@Avalia.Api_HostAddress = http://localhost:5080
+
+GET {{Avalia.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
