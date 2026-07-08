@@ -50,21 +50,47 @@ Sistema de gestao de gastos residenciais desenvolvido com backend em .NET/C# e f
 Avalia/
   backend/
     Avalia.Api.csproj
+    Dockerfile
     Program.cs
     Data/
       avalia.db
   frontend/
+    Dockerfile
+    nginx.conf
     src/
       App.tsx
       App.css
       index.css
     package.json
   Avalia.slnx
+  docker-compose.yml
+  .dockerignore
   .gitignore
   README.md
 ```
 
-## Como rodar
+## Ambiente
+
+### Pre-requisitos para rodar localmente
+
+- .NET SDK 10
+- Node.js 24
+- npm 11
+
+### Pre-requisitos para rodar com Docker
+
+- Docker Desktop instalado
+- Docker Desktop iniciado antes de executar os comandos
+- Docker Compose disponivel no terminal
+
+Para conferir:
+
+```powershell
+docker --version
+docker compose version
+```
+
+## Como rodar localmente
 
 ### Backend
 
@@ -93,6 +119,62 @@ A aplicacao ficara disponivel em:
 
 ```text
 http://localhost:5173
+```
+
+## Como rodar com Docker
+
+Na raiz do projeto:
+
+```powershell
+docker compose up --build
+```
+
+A aplicacao ficara disponivel em:
+
+```text
+http://localhost:5173
+```
+
+A API ficara disponivel em:
+
+```text
+http://localhost:5080
+```
+
+Para rodar em segundo plano:
+
+```powershell
+docker compose up --build -d
+```
+
+Para parar os containers:
+
+```powershell
+docker compose down
+```
+
+Para remover containers e recriar tudo no proximo start:
+
+```powershell
+docker compose down
+docker compose up --build
+```
+
+### Banco de dados no Docker
+
+O container da API usa o mesmo arquivo SQLite local:
+
+```text
+backend/Data/avalia.db
+```
+
+Esse arquivo fica persistido fora do container por volume configurado no `docker-compose.yml`.
+
+### Portas utilizadas
+
+```text
+Frontend: http://localhost:5173
+API:      http://localhost:5080
 ```
 
 ## Endpoints de pessoas
@@ -160,6 +242,9 @@ Pessoa 1:N Transacoes
 - Criado o projeto backend `backend/Avalia.Api.csproj`.
 - Criado o projeto frontend em `frontend/` com React e TypeScript.
 - Configurado CORS na API para permitir chamadas do frontend local.
+- Adicionado Docker para execucao da API e do frontend em containers.
+- Adicionado `docker-compose.yml` para subir o projeto completo.
+- Adicionado `.dockerignore` para reduzir o contexto de build.
 
 ### Backend
 
@@ -191,6 +276,9 @@ Pessoa 1:N Transacoes
 - Criado endpoint `/api/totals`.
 - Implementado calculo de totais por pessoa.
 - Implementado calculo de total geral de receitas, despesas e saldo liquido.
+- Criado `backend/Dockerfile` com build multi-stage para publicar a API.
+- Configurada execucao da API em container na porta interna `8080`.
+- Configurada connection string via variavel de ambiente no Docker.
 
 ### Frontend
 
@@ -209,6 +297,9 @@ Pessoa 1:N Transacoes
 - Adicionado contador de transacoes cadastradas.
 - Criada consulta de totais por pessoa.
 - Criada exibicao do total geral ao final da consulta de totais.
+- Criado `frontend/Dockerfile` com build do React e publicacao em Nginx.
+- Criado `frontend/nginx.conf` para servir a aplicacao SPA.
+- Configurado `VITE_API_URL` no build Docker apontando para `http://localhost:5080`.
 
 ### Repositorio
 
