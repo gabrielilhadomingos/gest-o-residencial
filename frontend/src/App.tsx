@@ -20,6 +20,23 @@ type Transaction = {
   pessoaNome: string
 }
 
+type PersonTotal = {
+  pessoaId: string
+  pessoaNome: string
+  totalReceitas: number
+  totalDespesas: number
+  saldo: number
+}
+
+type Totals = {
+  pessoas: PersonTotal[]
+  totalGeral: {
+    totalReceitas: number
+    totalDespesas: number
+    saldoLiquido: number
+  }
+}
+
 type TransactionType = 'despesa' | 'receita'
 
 type PersonForm = {
@@ -46,15 +63,18 @@ const emptyTransactionForm: TransactionForm = {
 function App() {
   const [people, setPeople] = useState<Person[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [totals, setTotals] = useState<Totals | null>(null)
   const [personForm, setPersonForm] = useState<PersonForm>(emptyPersonForm)
   const [transactionForm, setTransactionForm] = useState<TransactionForm>(emptyTransactionForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isLoadingPeople, setIsLoadingPeople] = useState(true)
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true)
+  const [isLoadingTotals, setIsLoadingTotals] = useState(true)
   const [isSavingPerson, setIsSavingPerson] = useState(false)
   const [isSavingTransaction, setIsSavingTransaction] = useState(false)
   const [personMessage, setPersonMessage] = useState('')
   const [transactionMessage, setTransactionMessage] = useState('')
+  const [totalsMessage, setTotalsMessage] = useState('')
 
   const totalPeople = useMemo(() => people.length, [people])
   const totalTransactions = useMemo(() => transactions.length, [transactions])
@@ -95,8 +115,26 @@ function App() {
     }
   }
 
+  async function loadTotals() {
+    setIsLoadingTotals(true)
+    setTotalsMessage('')
+
+    try {
+      const response = await fetch(`${apiUrl}/api/totals`)
+      if (!response.ok) {
+        throw new Error('Nao foi possivel carregar os totais.')
+      }
+
+      setTotals(await response.json())
+    } catch (error) {
+      setTotalsMessage(error instanceof Error ? error.message : 'Erro inesperado.')
+    } finally {
+      setIsLoadingTotals(false)
+    }
+  }
+
   async function loadAll() {
-    await Promise.all([loadPeople(), loadTransactions()])
+    await Promise.all([loadPeople(), loadTransactions(), loadTotals()])
   }
 
   useEffect(() => {
@@ -152,7 +190,7 @@ function App() {
 
       setPersonForm(emptyPersonForm)
       setEditingId(null)
-      await loadPeople()
+      await Promise.all([loadPeople(), loadTotals()])
       setPersonMessage(editingId ? 'Pessoa atualizada.' : 'Pessoa cadastrada.')
     } catch (error) {
       setPersonMessage(error instanceof Error ? error.message : 'Erro inesperado.')
@@ -207,7 +245,7 @@ function App() {
       }
 
       setTransactionForm(emptyTransactionForm)
-      await loadTransactions()
+      await Promise.all([loadTransactions(), loadTotals()])
       setTransactionMessage('Transacao cadastrada.')
     } catch (error) {
       setTransactionMessage(error instanceof Error ? error.message : 'Erro inesperado.')
@@ -441,6 +479,62 @@ function App() {
                   </tr>
                 ))}
               </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="totals-section">
+        <div className="data-panel">
+          <div className="panel-heading">
+            <h2>Consulta de totais</h2>
+            {isLoadingTotals && <span>Carregando...</span>}
+          </div>
+
+          {totalsMessage && <p className="status-message">{totalsMessage}</p>}
+
+          <div className="table-wrap">
+            <table className="totals-table">
+              <thead>
+                <tr>
+                  <th>Pessoa</th>
+                  <th>Total receitas</th>
+                  <th>Total despesas</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!isLoadingTotals && totals?.pessoas.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="empty-state">
+                      Nenhuma pessoa cadastrada.
+                    </td>
+                  </tr>
+                )}
+
+                {totals?.pessoas.map((personTotal) => (
+                  <tr key={personTotal.pessoaId}>
+                    <td>{personTotal.pessoaNome}</td>
+                    <td>{formatCurrency(personTotal.totalReceitas)}</td>
+                    <td>{formatCurrency(personTotal.totalDespesas)}</td>
+                    <td className={personTotal.saldo >= 0 ? 'amount-positive' : 'amount-negative'}>
+                      {formatCurrency(personTotal.saldo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {totals && (
+                <tfoot>
+                  <tr>
+                    <td>Total geral</td>
+                    <td>{formatCurrency(totals.totalGeral.totalReceitas)}</td>
+                    <td>{formatCurrency(totals.totalGeral.totalDespesas)}</td>
+                    <td className={totals.totalGeral.saldoLiquido >= 0 ? 'amount-positive' : 'amount-negative'}>
+                      {formatCurrency(totals.totalGeral.saldoLiquido)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

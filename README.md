@@ -34,6 +34,16 @@ Sistema de gestao de gastos residenciais desenvolvido com backend em .NET/C# e f
 - Validacao de pessoa existente no cadastro de pessoas.
 - Bloqueio de transacao do tipo `receita` para pessoa menor de 18 anos.
 
+### Consulta de totais
+
+- Listagem de todas as pessoas cadastradas.
+- Exibicao do total de receitas por pessoa.
+- Exibicao do total de despesas por pessoa.
+- Exibicao do saldo por pessoa, calculado por `receita - despesa`.
+- Exibicao do total geral de receitas.
+- Exibicao do total geral de despesas.
+- Exibicao do saldo liquido geral.
+
 ## Estrutura do projeto
 
 ```text
@@ -100,6 +110,12 @@ DELETE /api/people/{id}
 ```text
 GET  /api/transactions
 POST /api/transactions
+```
+
+## Endpoint de totais
+
+```text
+GET /api/totals
 ```
 
 ## Banco de dados
@@ -172,6 +188,9 @@ Pessoa 1:N Transacoes
 - Adicionada geracao automatica do identificador da transacao.
 - Adicionada validacao de pessoa existente para cadastro de transacao.
 - Adicionada validacao para impedir receita quando a pessoa for menor de 18 anos.
+- Criado endpoint `/api/totals`.
+- Implementado calculo de totais por pessoa.
+- Implementado calculo de total geral de receitas, despesas e saldo liquido.
 
 ### Frontend
 
@@ -188,6 +207,8 @@ Pessoa 1:N Transacoes
 - Criado formulario com campos de descricao, valor, tipo e pessoa.
 - Criada tabela de transacoes cadastradas.
 - Adicionado contador de transacoes cadastradas.
+- Criada consulta de totais por pessoa.
+- Criada exibicao do total geral ao final da consulta de totais.
 
 ### Repositorio
 

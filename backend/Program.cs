@@ -161,6 +161,47 @@ transactions.MapPost("/", async (TransacaoRequest request, AvaliaDbContext db) =
     return Results.Created($"/api/transactions/{transacao.Id}", TransacaoResponse.FromEntity(transacao));
 });
 
+app.MapGet("/api/totals", async (AvaliaDbContext db) =>
+{
+    var pessoas = await db.Pessoas
+        .AsNoTracking()
+        .Include(pessoa => pessoa.Transacoes)
+        .OrderBy(pessoa => pessoa.Nome)
+        .ToListAsync();
+
+    var peopleTotals = pessoas
+        .Select(pessoa =>
+        {
+            var totalReceitas = pessoa.Transacoes
+                .Where(transacao => transacao.Tipo == TransactionTypes.Receita)
+                .Sum(transacao => transacao.Valor);
+            var totalDespesas = pessoa.Transacoes
+                .Where(transacao => transacao.Tipo == TransactionTypes.Despesa)
+                .Sum(transacao => transacao.Valor);
+
+            return new PessoaTotalResponse(
+                pessoa.Id,
+                pessoa.Nome,
+                totalReceitas,
+                totalDespesas,
+                totalReceitas - totalDespesas
+            );
+        })
+        .ToList();
+
+    var totalReceitasGeral = peopleTotals.Sum(total => total.TotalReceitas);
+    var totalDespesasGeral = peopleTotals.Sum(total => total.TotalDespesas);
+
+    return Results.Ok(new TotaisResponse(
+        peopleTotals,
+        new TotalGeralResponse(
+            totalReceitasGeral,
+            totalDespesasGeral,
+            totalReceitasGeral - totalDespesasGeral
+        )
+    ));
+});
+
 app.Run();
 
 static string? ValidatePessoa(PessoaRequest request)
@@ -305,6 +346,25 @@ public sealed record TransacaoResponse(
         );
     }
 }
+
+public sealed record PessoaTotalResponse(
+    Guid PessoaId,
+    string PessoaNome,
+    decimal TotalReceitas,
+    decimal TotalDespesas,
+    decimal Saldo
+);
+
+public sealed record TotalGeralResponse(
+    decimal TotalReceitas,
+    decimal TotalDespesas,
+    decimal SaldoLiquido
+);
+
+public sealed record TotaisResponse(
+    IReadOnlyCollection<PessoaTotalResponse> Pessoas,
+    TotalGeralResponse TotalGeral
+);
 
 public static class TransactionTypes
 {
